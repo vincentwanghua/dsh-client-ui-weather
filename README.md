@@ -21,7 +21,13 @@ A polished weather dashboard plugin for the [DeepSeek Harness](https://github.co
 
 This repository contains the standalone plugin source. The supported runtime is the DeepSeek Harness monorepo because the plugin composes through its `shell.overlay` slot and imports the Harness client packages.
 
-Copy or vendor this directory as `packages/client/ui-weather`, then add the package to the Web bundle roster:
+The repository declares a `dsh.bundle` manifest and ships `cordis.patch.yml`, so it can be installed with the normal bundle command:
+
+```sh
+dsh plugin --profile web add github:mercy719/dsh-client-ui-weather
+```
+
+For source development, copy or vendor this directory as `packages/client/ui-weather`, then add the package to the Web bundle roster:
 
 ```yaml
 # packages/bundle/web-app/cordis.patch.yml

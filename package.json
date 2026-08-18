@@ -30,7 +30,17 @@
     "url": "https://github.com/mercy719/dsh-client-ui-weather/issues"
   },
   "homepage": "https://github.com/mercy719/dsh-client-ui-weather#readme",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "weather",
+    "weather-dashboard",
+    "open-meteo"
+  ],
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-runtime",

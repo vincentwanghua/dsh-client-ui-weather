@@ -21,7 +21,13 @@
 
 本仓库包含独立插件源码。插件通过 Harness 的 `shell.overlay` slot 组合，并依赖 Harness client packages，因此推荐在 DeepSeek Harness monorepo 中使用。
 
-将本目录复制或 vendor 到 `packages/client/ui-weather`，然后加入 Web bundle roster：
+仓库声明了 `dsh.bundle` manifest 并包含 `cordis.patch.yml`，可以使用标准 bundle 命令安装：
+
+```sh
+dsh plugin --profile web add github:mercy719/dsh-client-ui-weather
+```
+
+进行源码开发时，将本目录复制或 vendor 到 `packages/client/ui-weather`，然后加入 Web bundle roster：
 
 ```yaml
 # packages/bundle/web-app/cordis.patch.yml
