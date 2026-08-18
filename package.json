@@ -1,0 +1,63 @@
+{
+  "name": "@deepseek-ai/dsh-client-ui-weather",
+  "version": "0.1.0-rc.5",
+  "description": "Weather dashboard overlay for the DeepSeek Harness Web GUI",
+  "type": "module",
+  "license": "MIT",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mercy719/dsh-client-ui-weather.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mercy719/dsh-client-ui-weather/issues"
+  },
+  "homepage": "https://github.com/mercy719/dsh-client-ui-weather#readme",
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "echo 'Run the package tests from a DeepSeek Harness checkout: pnpm exec vitest run packages/client/ui-weather/tests'",
+    "bundle": "echo 'Build this package from a DeepSeek Harness checkout with pnpm --filter @deepseek-ai/dsh-client-ui-weather bundle'"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.5",
+    "@deepseek-ai/dsh-invariants": "^0.1.0-rc.5",
+    "react": "^18.2.0"
+  }
+}
