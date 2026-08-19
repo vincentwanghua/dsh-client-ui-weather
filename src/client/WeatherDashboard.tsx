@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactElement } from 'react'
 import { IconCloseOutline16, IconRefreshOutline14, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WeatherRequest } from './weather-data.ts'
@@ -8,11 +8,14 @@ import {
   fallbackWeather,
   geocodeCity,
   loadCustomCities,
+  loadDragPosition,
   loadHiddenBuiltinIds,
   saveCustomCities,
+  saveDragPosition,
   saveHiddenBuiltinIds,
   WEATHER_CITIES,
   type DayForecast,
+  type DragPosition,
   type GeocodeResult,
   type WeatherCity,
   type WeatherCondition,
@@ -230,6 +233,62 @@ export function WeatherDashboard({ request }: WeatherDashboardProps): ReactEleme
     })
   }, [])
 
+  // Draggable dashboard: press and hold the header to move the card.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const [dragPosition, setDragPosition] = useState<DragPosition | null>(loadDragPosition)
+  const [dragging, setDragging] = useState(false)
+  const dragStateRef = useRef<{ pointerId: number; startX: number; startY: number; originLeft: number; originTop: number } | null>(null)
+
+  const beginHeaderDrag = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
+    if (event.button !== 0) return
+    const target = event.target as HTMLElement
+    // Let buttons/inputs handle their own interactions instead of dragging.
+    if (target.closest('button, select, input, [data-weather-city-menu], [data-weather-search]')) return
+    const root = rootRef.current
+    if (!root) return
+    const rect = root.getBoundingClientRect()
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originLeft: rect.left,
+      originTop: rect.top,
+    }
+    setDragging(true)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    event.preventDefault()
+  }, [])
+
+  const moveHeaderDrag = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
+    const drag = dragStateRef.current
+    const root = rootRef.current
+    if (!drag || !root || event.pointerId !== drag.pointerId) return
+    const dx = event.clientX - drag.startX
+    const dy = event.clientY - drag.startY
+    const width = root.offsetWidth
+    const height = root.offsetHeight
+    const margin = 8
+    const left = Math.min(Math.max(drag.originLeft + dx, margin), window.innerWidth - width - margin)
+    const top = Math.min(Math.max(drag.originTop + dy, margin), window.innerHeight - height - margin)
+    setDragPosition({ left, top })
+  }, [])
+
+  const endHeaderDrag = useCallback((event: ReactPointerEvent<HTMLElement>): void => {
+    const drag = dragStateRef.current
+    if (!drag || event.pointerId !== drag.pointerId) return
+    dragStateRef.current = null
+    setDragging(false)
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId)
+    } catch {
+      // pointer capture may already be released
+    }
+  }, [])
+
+  useEffect(() => {
+    if (dragPosition !== null) saveDragPosition(dragPosition)
+  }, [dragPosition])
+
   const load = useCallback(async (city: WeatherCity): Promise<void> => {
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -264,7 +323,14 @@ export function WeatherDashboard({ request }: WeatherDashboardProps): ReactEleme
   ], [current])
 
   return (
-    <div className={css.root} data-weather-dashboard data-open={open || undefined}>
+    <div
+      ref={rootRef}
+      className={css.root}
+      data-weather-dashboard
+      data-open={open || undefined}
+      data-dragging={dragging || undefined}
+      style={dragPosition !== null ? { left: dragPosition.left, top: dragPosition.top } : undefined}
+    >
       {!open && (
         <button type="button" className={css.pulse} onClick={() => { setOpen(true) }} aria-label="打开天气看板">
           <WeatherGlyph condition={current.condition} />
@@ -274,7 +340,14 @@ export function WeatherDashboard({ request }: WeatherDashboardProps): ReactEleme
       )}
       {open && (
         <section className={css.card} aria-label="天气看板">
-          <header className={css.header}>
+          <header
+            className={css.header}
+            onPointerDown={beginHeaderDrag}
+            onPointerMove={moveHeaderDrag}
+            onPointerUp={endHeaderDrag}
+            onPointerCancel={endHeaderDrag}
+            style={{ cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+          >
             <div className={css.brandLine}>
               <span className={css.liveMark} />
               <span className={css.eyebrow}>WEATHER DESK</span>

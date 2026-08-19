@@ -130,6 +130,40 @@ export function saveHiddenBuiltinIds(ids: readonly string[]): void {
   }
 }
 
+/** Stored drag position of the dashboard (left/top in viewport px). */
+export interface DragPosition {
+  readonly left: number
+  readonly top: number
+}
+
+/** localStorage key holding the dashboard's dragged position. */
+const DRAG_POSITION_KEY = 'dsh-weather.drag-position'
+
+/** Read the dragged position; malformed data is ignored. */
+export function loadDragPosition(): DragPosition | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(DRAG_POSITION_KEY)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') return null
+    const candidate = parsed as Record<string, unknown>
+    if (typeof candidate.left !== 'number' || typeof candidate.top !== 'number') return null
+    if (!Number.isFinite(candidate.left) || !Number.isFinite(candidate.top)) return null
+    return { left: candidate.left, top: candidate.top }
+  } catch {
+    return null
+  }
+}
+
+/** Persist the dragged position; storage failures are silently ignored. */
+export function saveDragPosition(position: DragPosition): void {
+  try {
+    globalThis.localStorage?.setItem(DRAG_POSITION_KEY, JSON.stringify(position))
+  } catch {
+    // ignore storage failures
+  }
+}
+
 /** A geocoding match from the Open-Meteo search endpoint. */
 export interface GeocodeResult {
   readonly id: string
