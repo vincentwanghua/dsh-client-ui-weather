@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import { IconCloseOutline16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCloseOutline16, IconRefreshOutline14, IconSearchOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WeatherRequest } from './weather-data.ts'
 import {
   DEFAULT_CITY,
   fetchWeather,
   fallbackWeather,
+  geocodeCity,
+  loadCustomCities,
+  loadHiddenBuiltinIds,
+  saveCustomCities,
+  saveHiddenBuiltinIds,
   WEATHER_CITIES,
   type DayForecast,
+  type GeocodeResult,
   type WeatherCity,
   type WeatherCondition,
   type WeatherSnapshot,
@@ -147,13 +153,82 @@ function ForecastRow({ forecast }: { forecast: DayForecast }): ReactElement {
  * @returns the weather pulse or expanded dashboard card.
  */
 export function WeatherDashboard({ request }: WeatherDashboardProps): ReactElement {
+  const [customCities, setCustomCities] = useState<WeatherCity[]>(loadCustomCities)
+  const [hiddenBuiltinIds, setHiddenBuiltinIds] = useState<string[]>(loadHiddenBuiltinIds)
+  const visibleCities = useMemo<WeatherCity[]>(
+    () => WEATHER_CITIES.filter((city) => !hiddenBuiltinIds.includes(city.id)).concat(customCities),
+    [hiddenBuiltinIds, customCities],
+  )
   const [cityId, setCityId] = useState(DEFAULT_CITY.id)
+  const [cityMenuOpen, setCityMenuOpen] = useState(false)
   const [data, setData] = useState<WeatherSnapshot>(() => fallbackWeather(DEFAULT_CITY))
   const [open, setOpen] = useState(true)
   const [loading, setLoading] = useState(false)
+  const [cityQuery, setCityQuery] = useState('')
+  const [cityResults, setCityResults] = useState<GeocodeResult[]>([])
+  const [searchingCity, setSearchingCity] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const requestId = useRef(0)
   const abortRef = useRef<AbortController | undefined>(undefined)
-  const selectedCity = WEATHER_CITIES.find((city) => city.id === cityId)!
+  const selectedCity = visibleCities.find((city) => city.id === cityId) ?? visibleCities[0] ?? DEFAULT_CITY
+
+  const searchCity = useCallback(async (): Promise<void> => {
+    const query = cityQuery.trim()
+    if (!query) return
+    setSearchingCity(true)
+    setCityResults([])
+    try {
+      const results = await geocodeCity(query, request)
+      setCityResults(results)
+    } catch {
+      setCityResults([])
+    } finally {
+      setSearchingCity(false)
+    }
+  }, [cityQuery, request])
+
+  const addCustomCity = useCallback((city: GeocodeResult): void => {
+    setCustomCities((prev) => {
+      if (prev.some((item) => item.id === city.id)) return prev
+      const next = [...prev, city]
+      saveCustomCities(next)
+      return next
+    })
+    setCityId(city.id)
+    setCityQuery('')
+    setCityResults([])
+  }, [])
+
+  const removeCity = useCallback((cityIdToRemove: string): void => {
+    const isBuiltin = WEATHER_CITIES.some((city) => city.id === cityIdToRemove)
+    if (isBuiltin) {
+      setHiddenBuiltinIds((prev) => {
+        if (prev.includes(cityIdToRemove)) return prev
+        const next = [...prev, cityIdToRemove]
+        saveHiddenBuiltinIds(next)
+        return next
+      })
+    } else {
+      setCustomCities((prev) => {
+        const next = prev.filter((city) => city.id !== cityIdToRemove)
+        saveCustomCities(next)
+        return next
+      })
+    }
+    setCityId((current) => {
+      if (current !== cityIdToRemove) return current
+      const remaining = visibleCities.filter((city) => city.id !== cityIdToRemove)
+      return remaining.length > 0 ? remaining[0]!.id : DEFAULT_CITY.id
+    })
+  }, [visibleCities])
+
+  const restoreAllCities = useCallback((): void => {
+    setHiddenBuiltinIds((prev) => {
+      if (prev.length === 0) return prev
+      saveHiddenBuiltinIds([])
+      return []
+    })
+  }, [])
 
   const load = useCallback(async (city: WeatherCity): Promise<void> => {
     abortRef.current?.abort()
@@ -221,18 +296,167 @@ export function WeatherDashboard({ request }: WeatherDashboardProps): ReactEleme
               <h2>{data.city}</h2>
               <span className={css.country}>{data.country} · 更新于 {formatUpdatedAt(data.updatedAt, selectedCity.timezone)}</span>
             </div>
-            <select
-              aria-label="选择城市"
-              value={cityId}
-              onChange={(event) => {
-                const city = WEATHER_CITIES.find((item) => item.id === event.currentTarget.value)!
-                setCityId(city.id)
-                setData(fallbackWeather(city))
+            <button
+              type="button"
+              className={css.iconButton}
+              onClick={() => { setCityMenuOpen((prev) => !prev) }}
+              aria-label="切换或管理城市"
+              title="切换或管理城市"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 600, width: 'auto', minWidth: '52px', padding: '0 6px' }}
+            >
+              <span>{data.city}</span>
+              <span style={{ fontSize: '9px', opacity: '.7' }}>{cityMenuOpen ? '▲' : '▼'}</span>
+            </button>
+            <button
+              type="button"
+              className={css.iconButton}
+              onClick={() => {
+                setSearchOpen((prev) => !prev)
+                if (!searchOpen) {
+                  setCityResults([])
+                  setCityQuery('')
+                  setSearchingCity(false)
+                }
+              }}
+              aria-label="添加城市"
+              title="搜索并添加城市"
+            >
+              <IconSearchOutline16 size={14} />
+            </button>
+          </div>
+
+          {cityMenuOpen && (
+            <div
+              data-weather-city-menu
+              style={{ position: 'fixed', inset: 0, zIndex: 20, pointerEvents: 'auto' }}
+              onClick={() => { setCityMenuOpen(false) }}
+            />
+          )}
+          {cityMenuOpen && (
+            <div
+              data-weather-city-menu
+              style={{
+                position: 'relative',
+                zIndex: 21,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                margin: '0 12px 8px',
+                padding: '6px',
+                borderRadius: '12px',
+                border: '1px solid var(--dsw-alias-border-l2)',
+                background: 'var(--dsw-alias-bg-layer-2)',
+                boxShadow: 'var(--dsw-shadow-lv3)',
+                pointerEvents: 'auto',
               }}
             >
-              {WEATHER_CITIES.map((city) => <option key={city.id} value={city.id}>{city.name}</option>)}
-            </select>
-          </div>
+              {visibleCities.map((city) => (
+                <div
+                  key={city.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '6px',
+                    padding: '5px 8px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    background: city.id === cityId ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
+                    color: 'var(--dsw-alias-label-primary)',
+                    fontSize: '12px',
+                  }}
+                  onClick={() => {
+                    setCityId(city.id)
+                    setData(fallbackWeather(city))
+                    setCityMenuOpen(false)
+                  }}
+                >
+                  <span>{city.name}</span>
+                  <button
+                    type="button"
+                    className={css.iconButton}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      removeCity(city.id)
+                    }}
+                    aria-label={`移除城市 ${city.name}`}
+                    title="移除该城市"
+                    style={{ width: '20px', height: '20px', fontSize: '11px', flexShrink: 0 }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              {hiddenBuiltinIds.length > 0 && (
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    restoreAllCities()
+                  }}
+                  style={{ marginTop: '4px', justifyContent: 'center', width: '100%', padding: '4px 8px', fontSize: '11px', color: 'var(--weather-accent)' }}
+                >
+                  恢复默认城市
+                </button>
+              )}
+            </div>
+          )}
+
+          {searchOpen && (
+            <div data-weather-search style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '10px 12px', borderBottom: '1px solid var(--dsw-alias-border-l1)', pointerEvents: 'auto' }}>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <input
+                  type="text"
+                  value={cityQuery}
+                  onChange={(event) => { setCityQuery(event.currentTarget.value) }}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void searchCity() }}
+                  placeholder="输入城市名，如 广州 / Chengdu"
+                  aria-label="搜索城市"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '6px 8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--dsw-alias-border-l2)',
+                    background: 'var(--dsw-alias-bg-layer-1)',
+                    color: 'var(--dsw-alias-label-primary)',
+                    fontSize: '12px',
+                  }}
+                />
+                <button
+                  type="button"
+                  className={css.iconButton}
+                  onClick={() => { void searchCity() }}
+                  disabled={searchingCity}
+                  aria-label="搜索"
+                >
+                  {searchingCity ? '…' : '搜索'}
+                </button>
+              </div>
+              {cityResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {cityResults.map((city) => (
+                    <button
+                      key={city.id}
+                      type="button"
+                      className={css.iconButton}
+                      onClick={() => { addCustomCity(city) }}
+                      style={{ justifyContent: 'flex-start', width: '100%', padding: '6px 8px', borderRadius: '8px', gap: '6px', fontSize: '12px', color: 'var(--dsw-alias-label-primary)' }}
+                    >
+                      <span>{city.name}</span>
+                      <span style={{ color: 'var(--dsw-alias-label-secondary)', fontSize: '11px' }}>
+                        {city.country} · {city.latitude.toFixed(2)}, {city.longitude.toFixed(2)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {cityResults.length === 0 && searchingCity && (
+                <span style={{ fontSize: '11px', color: 'var(--dsw-alias-label-secondary)' }}>搜索中…</span>
+              )}
+            </div>
+          )}
 
           <div className={css.heroWeather}>
             <div className={css.heroTemperature}>{formatTemperature(current.temperature)}</div>

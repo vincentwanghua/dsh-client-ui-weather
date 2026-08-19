@@ -59,7 +59,11 @@
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

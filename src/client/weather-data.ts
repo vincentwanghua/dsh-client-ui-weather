@@ -71,6 +71,131 @@ export const DEFAULT_CITY: WeatherCity = WEATHER_CITIES[0]!
 /** Narrow request face injected by the browser plugin for deterministic tests. */
 export type WeatherRequest = typeof fetch
 
+/** localStorage key holding user-added cities (custom city support). */
+const CUSTOM_CITIES_KEY = 'dsh-weather.custom-cities'
+
+/** Read user-added cities from localStorage; malformed data is ignored. */
+export function loadCustomCities(): WeatherCity[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(CUSTOM_CITIES_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((city): city is WeatherCity => {
+      if (city === null || typeof city !== 'object') return false
+      const candidate = city as Record<string, unknown>
+      return typeof candidate.id === 'string'
+        && typeof candidate.name === 'string'
+        && typeof candidate.country === 'string'
+        && typeof candidate.latitude === 'number'
+        && typeof candidate.longitude === 'number'
+        && typeof candidate.timezone === 'string'
+    })
+  } catch {
+    return []
+  }
+}
+
+/** Persist user-added cities; storage failures are silently ignored. */
+export function saveCustomCities(cities: readonly WeatherCity[]): void {
+  try {
+    globalThis.localStorage?.setItem(CUSTOM_CITIES_KEY, JSON.stringify(cities))
+  } catch {
+    // ignore storage failures
+  }
+}
+
+/** localStorage key holding built-in city ids hidden by the user. */
+const HIDDEN_BUILTIN_KEY = 'dsh-weather.hidden-builtin'
+
+/** Read hidden built-in city ids; malformed data is ignored. */
+export function loadHiddenBuiltinIds(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(HIDDEN_BUILTIN_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((id): id is string => typeof id === 'string' && WEATHER_CITIES.some((city) => city.id === id))
+  } catch {
+    return []
+  }
+}
+
+/** Persist hidden built-in city ids; storage failures are silently ignored. */
+export function saveHiddenBuiltinIds(ids: readonly string[]): void {
+  try {
+    globalThis.localStorage?.setItem(HIDDEN_BUILTIN_KEY, JSON.stringify(ids))
+  } catch {
+    // ignore storage failures
+  }
+}
+
+/** A geocoding match from the Open-Meteo search endpoint. */
+export interface GeocodeResult {
+  readonly id: string
+  readonly name: string
+  readonly country: string
+  readonly latitude: number
+  readonly longitude: number
+  readonly timezone: string
+}
+
+/**
+ * Search Open-Meteo geocoding for a city name (same provider, no API key).
+ * @param query - city name or partial name.
+ * @param request - browser request function.
+ * @param signal - optional cancellation signal.
+ * @returns candidate cities with coordinates, country and timezone.
+ */
+export async function geocodeCity(
+  query: string,
+  request: typeof fetch = fetch,
+  signal?: AbortSignal,
+): Promise<GeocodeResult[]> {
+  const params = new URLSearchParams({
+    name: query,
+    count: '5',
+    language: 'zh',
+    format: 'json',
+  })
+  const controller = new AbortController()
+  let rejectAbort: (() => void) | undefined
+  const abortPromise = new Promise<never>((_, reject) => {
+    rejectAbort = () => { reject(new Error('geocode request aborted')) }
+  })
+  const abort = (): void => {
+    controller.abort()
+    rejectAbort?.()
+  }
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    const response = await Promise.race([
+      abortPromise,
+      request(`https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`, { signal: controller.signal }),
+    ])
+    if (!response.ok) throw new Error(`geocode request failed: ${response.status}`)
+    const payload: unknown = await response.json()
+    const results = (payload as { results?: unknown }).results
+    if (!Array.isArray(results)) return []
+    return results.flatMap((item): GeocodeResult[] => {
+      if (item === null || typeof item !== 'object') return []
+      const candidate = item as Record<string, unknown>
+      if (typeof candidate.name !== 'string' || typeof candidate.latitude !== 'number' || typeof candidate.longitude !== 'number') return []
+      const name = candidate.name
+      return [{
+        id: `custom-${candidate.latitude.toFixed(3)}-${candidate.longitude.toFixed(3)}-${name}`,
+        name,
+        country: typeof candidate.country === 'string' ? candidate.country : typeof candidate.country_code === 'string' ? candidate.country_code : '',
+        latitude: candidate.latitude,
+        longitude: candidate.longitude,
+        timezone: typeof candidate.timezone === 'string' ? candidate.timezone : 'UTC',
+      }]
+    })
+  } finally {
+    signal?.removeEventListener('abort', abort)
+  }
+}
+
 /** Upper bound for one public-provider request before sample data takes over. */
 const WEATHER_REQUEST_TIMEOUT_MS = 10_000
 
